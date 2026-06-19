@@ -6,5 +6,5 @@
 ╚██████╔╝███████║██║  ██║
  ╚═════╝ ╚══════╝╚═╝  ╚═╝
  
-OSH-PICOSOC-PWM
+OSH-PICOSOC-PERIPHERALS
 </pre>
