@@ -15,42 +15,43 @@ module simplegpio (
 	input clk,
 	input resetn,
 
-	input         iomem_valid,
-	output        iomem_ready,
-	input  [3:0]  iomem_wstrb,
-	input  [31:0] iomem_addr,
-	input  [31:0] iomem_wdata,
-	output [31:0] iomem_rdata,
+	// Native picosoc iomem bus interface
+	input          iomem_valid,
+	output         iomem_ready,
+	input  [3:0]   iomem_wstrb,
+	input  [31:0]  iomem_addr,
+	input  [31:0]  iomem_wdata,
+	output [31:0]  iomem_rdata,
 
-  output reg [7:0] gpio_a_out, // Mapped to 0x0400_0000 (Writeable/Readable)
-  input      [7:0] gpio_a_in   // Mapped to 0x0400_0004 (Read-Only)
+	// Physical IO Pins
+	output reg [3:0] gpio_out, // Maps to bits [7:4] of the register
+	input      [3:0] gpio_in   // Maps to bits [3:0] of the register
 );
 
 	wire is_write   = |iomem_wstrb;
+	
+	// Single register select mapped to 0x0400_0000
+	wire gpio_reg_sel = iomem_valid && (iomem_addr == 32'h 0400_0000);
 
-  wire reg_out_sel = iomem_valid && (iomem_addr == 32'h 0400_0000); // Address: 0x0400_0000
-  wire reg_in_sel  = iomem_valid && (iomem_addr == 32'h 0400_0004); // Address: 0x0400_0004
-
-	wire module_active = reg_out_sel || reg_in_sel;
-
-	assign iomem_ready = module_active;
+	// Ready goes high instantly when this peripheral address is selected
+	assign iomem_ready = gpio_reg_sel;
 
 	// --- BUS READ LOGIC ---
-	assign iomem_rdata = reg_out_sel ? {24'h0, gpio_a_out} : //Read back what outputs are set to
-	                     reg_in_sel  ? {24'h0, gpio_a_in}  : //Read live states of button/switches
-	                     32'h 0000_0000;						         //Default safe fallback value
+	// Concatenate the upper 4 bits (output register state) and lower 4 bits (live input pins)
+	assign iomem_rdata = gpio_reg_sel ? {24'h0, gpio_out, gpio_in} : 32'h 0000_0000;
 
 	// --- BUS WRITE LOGIC ---
 	always @(posedge clk) begin
 		if (!resetn) begin
-			gpio_a_out <= 8'b0000_0000;
-		end else if (is_write) begin
-			if (reg_out_sel && iomem_wstrb[0]) begin
-				gpio_a_out <= iomem_wdata[7:0];
+			gpio_out <= 4'b0000;
+		end else if (is_write && gpio_reg_sel) begin
+			// iomem_wstrb[0] corresponds to the lowest byte of the 32-bit word (bits [7:0])
+			if (iomem_wstrb[0]) begin
+				// We only capture wdata[7:4] to drive our output pins.
+				// wdata[3:0] is ignored during a write because those bits map to physical inputs.
+				gpio_out <= iomem_wdata[7:4];
 			end
-
-			// NOTE: There is no write condition here for reg_in_sel (0x03000004)
-      // because physical buttons/switches cannot be written to by software.
 		end
 	end
+
 endmodule
